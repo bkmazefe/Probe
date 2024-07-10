@@ -1,6 +1,6 @@
 --!strict
 local RunService = game:GetService("RunService")
-local Promise = require(script.Parent.Parent.Parent.Promise)
+local Promise = require(game.ReplicatedStorage.Packages.Promise)
 local IsServer = RunService:IsServer()
 
 export type Probe = {
