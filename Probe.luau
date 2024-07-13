@@ -1,4 +1,6 @@
---!strict
+--[[
+	https://github.com/bkmazefe/Probe/tree/main
+]]
 local RunService = game:GetService("RunService")
 local Promise = require(game.ReplicatedStorage.Packages.Promise)
 local IsServer = RunService:IsServer()
@@ -231,7 +233,6 @@ function Probe.FireAll(self: ProbeInternal, event_name: string, ...: any): never
 	else
 		self._Probes.event:FireAllClients(event_name, table.pack(...))
 	end
-	self:_consumeSetting()
 	setType = nil
 	return
 end
