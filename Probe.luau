@@ -1,5 +1,5 @@
 --[[
-	https://github.com/bkmazefe/Probe/tree/main
+	https://github.com/bkmazefe/Probe
 ]]
 --[=[
 	RemoteEvent, RemoteFunction and UnreliableRemoteEvent handler for Roblox.
