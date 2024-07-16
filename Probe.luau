@@ -1,10 +1,32 @@
 --[[
 	https://github.com/bkmazefe/Probe/tree/main
 ]]
+--[=[
+	RemoteEvent, RemoteFunction and UnreliableRemoteEvent handler for Roblox.
+
+	@class Probe
+]=]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local Promise = require(game.ReplicatedStorage.Packages.Promise)
+local Promise = require(ReplicatedStorage.Packages.Promise)
 local IsServer = RunService:IsServer()
 
+--[=[
+	@within Probe
+	@interface Probe
+	.Fire (self: Probe, event_name: string, player_or_arg1: Player | any, ...any) -> ()
+	.FireAll (self: Probe, event_name: string, ...any) -> ()
+	.Invoke (self: Probe, event_name: string, player_or_arg1: Player | any, ...any) -> any
+	.OnEvent (self: Probe, event_name: string, callback: (...any) -> ()) -> ()
+	.OnInvoke (self: Probe, event_name: string, callback: (...any) -> any) -> ()
+	.NewSettings (settings: Settings) -> Settings
+	.getSettings (self: Probe) -> Settings
+	.setSettings (self: Probe, settings: Settings) -> ()
+	.resetSettings (self: Probe) -> ()
+	.withSettings (self: Probe, settings: Settings) -> ShortProbe
+	URE ShortProbe
+]=]
 export type Probe = {
 	NewSettings: (settings: Settings) -> Settings,
 	OnEvent: (self: Probe, event_name: string, callback: (...any) -> ()) -> (),
@@ -19,20 +41,26 @@ export type Probe = {
 	URE: ShortProbe,
 }
 
+--[=[
+	@within Probe
+	@interface Settings
+	.Type "URE" | "RE"
+]=]
 export type Settings = {
 	Type: "URE" | "RE",
 }
 
 type ProbeInternal = Probe & any
 
---[[
-	type ProbeFire =
-		((self: ProbeInternal | any, event_name: string, player_or_arg1: Player | any, ...any) -> ())
-		& ((self: ProbeInternal | any, { [any]: any }) -> ())
-]]
-type ProbeFire = (self: ProbeInternal | any, event_name: string, player_or_arg1: Player | any, ...any) -> ()
-type ProbeFireAll = (self: ProbeInternal | any, event_name: string, ...any) -> ()
+type ProbeFire = (self: ShortProbe | any, event_name: string, player_or_arg1: Player | any, ...any) -> ()
+type ProbeFireAll = (self: ShortProbe | any, event_name: string, ...any) -> ()
 
+--[=[
+	@within Probe
+	@interface ShortProbe
+	.Fire (self: ShortProbe, event_name: string, player_or_arg1: Player | any, ...any) -> ()
+	.FireAll (self: ShortProbe, event_name: string, ...any) -> ()
+]=]
 type ShortProbe = {
 	Fire: ProbeFire,
 	FireAll: ProbeFireAll,
@@ -72,7 +100,14 @@ local function OverrideSettings(selfSettings, settings)
 	return settings
 end
 
--- connect to remotes
+--[=[
+	Called on Client, connects to the remote events and functions.
+	This method is called from the ._setup method
+	@within Probe
+	@method _client
+	@return nil
+	@private
+]=]
 function Probe._client(self: ProbeInternal)
 	-- remoteevent
 	self._Probes.event.OnClientEvent:Connect(function(event_name: string, args: { any })
@@ -136,7 +171,14 @@ function Probe._client(self: ProbeInternal)
 	end
 end
 
--- connect to remotes
+--[=[
+	Called on Server, connects to the remote events and functions.
+	This method is called from the ._setup method
+	@within Probe
+	@method _server
+	@return nil
+	@private
+]=]
 function Probe._server(self: ProbeInternal)
 	self._Probes.event.OnServerEvent:Connect(function(player: Player, event_name: string, args: { any })
 		if self.Bindings[event_name] ~= nil then
@@ -162,6 +204,15 @@ function Probe._server(self: ProbeInternal)
 	end
 end
 
+--[=[
+	Initializes the Probe object and creates the remote event and function objects.
+	This method is automatically called when the probe object is required by a script.
+	Gets called only once on both server and client.
+	@within Probe
+	@method _setup
+	@return Promise
+	@private
+]=]
 function Probe._setup(self: ProbeInternal): any | unknown
 	return Promise.new(function(resolve, reject)
 		if IsServer == true then
@@ -194,6 +245,14 @@ function Probe._setup(self: ProbeInternal): any | unknown
 	end)
 end
 
+--[=[
+	Connect to a remote event.
+	@within Probe
+	@method OnEvent
+	@param event_name string
+	@param callback (...any) -> ()
+	@return nil
+]=]
 function Probe.OnEvent(self: ProbeInternal, event_name: string, callback: (...any) -> ())
 	if self.Bindings[event_name] == nil then
 		self.Bindings[event_name] = {}
@@ -201,6 +260,15 @@ function Probe.OnEvent(self: ProbeInternal, event_name: string, callback: (...an
 	table.insert(self.Bindings[event_name], callback)
 end
 
+--[=[
+	Connect to a remote function.
+	@within Probe
+	@method OnInvoke
+	@param event_name string
+	@param callback (...any) -> any
+	@return nil
+	@error "Can't assign more than one functions for each invokeable event. [event_name]: " .. event_name	
+]=]
 function Probe.OnInvoke(self: ProbeInternal, event_name: string, callback: (...any) -> any): never?
 	if self.Bindings["_" .. event_name] == nil then
 		error("Can't assign more than one functions for each invokeable event. [event_name]: " .. event_name)
@@ -209,6 +277,15 @@ function Probe.OnInvoke(self: ProbeInternal, event_name: string, callback: (...a
 	return
 end
 
+--[=[
+	Fires a remote or unreliable remote event.
+	@within Probe
+	@method Fire
+	@param event_name string
+	@param player_or_arg1 Player | any
+	@param ... any
+	@return nil
+]=]
 function Probe.Fire(self: ProbeInternal, event_name: string, player_or_arg1: Player | any, ...: any)
 	if IsServer == true then
 		if self.settings.Type == "URE" then
@@ -225,6 +302,15 @@ function Probe.Fire(self: ProbeInternal, event_name: string, player_or_arg1: Pla
 	end
 end
 
+--[=[
+	Fires a remote or unreliable remote event to all clients.
+	@within Probe
+	@method FireAll
+	@param event_name string
+	@param ... any
+	@return nil
+	@error "Can't run :FireAll on Client"
+]=]
 function Probe.FireAll(self: ProbeInternal, event_name: string, ...: any): never?
 	assert(IsServer, "Can't run :FireAll on Client")
 	local setType = self.settings.Type
@@ -237,6 +323,15 @@ function Probe.FireAll(self: ProbeInternal, event_name: string, ...: any): never
 	return
 end
 
+--[=[
+	Invokes a remote function.
+	@within Probe
+	@method Invoke
+	@param event_name string
+	@param player_or_arg1 Player | any
+	@param ... any
+	@return any
+]=]
 function Probe.Invoke(self: ProbeInternal, event_name: string, player_or_arg1: Player | any, ...: any): any
 	if IsServer == true then
 		return self._Probes.func:InvokeClient(player_or_arg1, event_name, table.pack(...))
@@ -245,28 +340,61 @@ function Probe.Invoke(self: ProbeInternal, event_name: string, player_or_arg1: P
 	end
 end
 
+--[=[
+	Sets a new set of settings to the default settings.
+	@within Probe
+	@method setSettings
+	@param settings Settings
+	@return nil
+]=]
 function Probe.setSettings(self: ProbeInternal, settings: Settings)
 	if self.settings.Type ~= settings.Type then
 		self.settings.Type = settings.Type
 	end
 end
 
+--[=[
+	Returns the current settings.
+	@within Probe
+	@method getSettings
+	@return Settings
+]=]
 function Probe.getSettings(self: ProbeInternal): Settings
 	return self.settings
 end
 
+--[=[
+	Resets the settings to the default settings.
+	@within Probe
+	@method resetSettings
+	@return nil
+]=]
 function Probe.ResetSettings(self: ProbeInternal)
 	self.settings = {
 		Type = "RE",
 	}
 end
 
+--[=[
+	Creates a new set of settings.
+	@within Probe
+	@param settings Settings
+	@return Settings
+]=]
 function Probe.NewSettings(settings: Settings): Settings
 	return {
 		Type = settings.Type or "RE",
 	}
 end
 
+--[=[
+	Creates a new proxy Probe object with the given settings.
+	@within Probe
+	@method withSettings
+	@param settings Settings
+	@return ShortProbe
+	@error "Settings must be a table"
+]=]
 function Probe.withSettings(self: ProbeInternal, settings: Settings): { Fire: ProbeFire, FireAll: ProbeFireAll }
 	assert(type(settings) == "table", "Settings must be a table")
 	return {
@@ -280,11 +408,6 @@ end
 Probe.URE = Probe:withSettings({
 	Type = "URE",
 })
-function Probe.URE(self)
-	return self:withSettings({
-		Type = "URE",
-	})
-end
 
 if not isSetup then
 	Probe:_setup():await()
