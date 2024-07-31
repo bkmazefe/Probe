@@ -52,18 +52,15 @@ export type Settings = {
 
 type ProbeInternal = Probe & any
 
-type ProbeFire = (self: ShortProbe | any, event_name: string, player_or_arg1: Player | any, ...any) -> ()
-type ProbeFireAll = (self: ShortProbe | any, event_name: string, ...any) -> ()
-
 --[=[
 	@within Probe
 	@interface ShortProbe
 	.Fire (self: ShortProbe, event_name: string, player_or_arg1: Player | any, ...any) -> ()
 	.FireAll (self: ShortProbe, event_name: string, ...any) -> ()
 ]=]
-type ShortProbe = {
-	Fire: ProbeFire,
-	FireAll: ProbeFireAll,
+export type ShortProbe = {
+	Fire: (self: ShortProbe | any, event_name: string, player_or_arg1: Player | any, ...any) -> (),
+	FireAll: (self: ShortProbe | any, event_name: string, ...any) -> (),
 }
 
 local isSetup = false
@@ -195,7 +192,7 @@ function Probe._server(self: ProbeInternal)
 		end
 	end)
 	self._Probes.func.OnServerInvoke = function(player: Player, event_name: string, args: { any })
-		local callback = self.Bindings["_" .. event_name][1]
+		local callback = self.Bindings["_" .. event_name]
 		if callback ~= nil then
 			return callback(player, table.unpack(args))
 		else
@@ -270,10 +267,10 @@ end
 	@error "Can't assign more than one functions for each invokeable event. [event_name]: " .. event_name	
 ]=]
 function Probe.OnInvoke(self: ProbeInternal, event_name: string, callback: (...any) -> any): never?
-	if self.Bindings["_" .. event_name] == nil then
+	if self.Bindings["_" .. event_name] ~= nil then
 		error("Can't assign more than one functions for each invokeable event. [event_name]: " .. event_name)
 	end
-	self.Bindings["_" .. event_name] = { callback }
+	self.Bindings["_" .. event_name] = callback
 	return
 end
 
@@ -395,7 +392,7 @@ end
 	@return ShortProbe
 	@error "Settings must be a table"
 ]=]
-function Probe.withSettings(self: ProbeInternal, settings: Settings): { Fire: ProbeFire, FireAll: ProbeFireAll }
+function Probe.withSettings(self: ProbeInternal, settings: Settings): ShortProbe
 	assert(type(settings) == "table", "Settings must be a table")
 	return {
 		_Probes = self._Probes,
