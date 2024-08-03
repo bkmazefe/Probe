@@ -9,8 +9,95 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+
+local Utility = require(script.Parent.Utility)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local IsServer = RunService:IsServer()
+
+-- Probe event caching
+--
+local latestEvents: { [string]: {} } = {}
+-- scopes are used to limit the amount of events that can be fired per second
+
+local function decimalConverter(n: number): number
+	local sN = string.split(tostring(n), ".")
+	local nN = tonumber(sN[1] .. "." .. string.sub(sN[2], 1, 2))
+	return nN or 0
+end
+
+local function createScope(eventName: string)
+	local t = table.pack()
+	latestEvents[eventName] = t
+	return t
+end
+
+local function getScope(eventName: string): { [any]: any }?
+	return latestEvents[eventName]
+end
+
+local function setScope(eventName: string, scope: { [any]: any })
+	latestEvents[eventName] = scope
+end
+
+local function secureGetScope(eventName: string): { [any]: any }
+	return getScope(eventName) or createScope(eventName)
+end
+
+local function pushScope(scope, v)
+	scope.n += 1
+	local size = scope.n
+	scope[size] = v
+end
+
+local function popScope(scope)
+	local size = scope.n
+	scope[size] = nil
+	scope.n -= 1
+end
+--
+
+local maxSameEventPerSecond = 10
+local interval = 1
+
+local function iterateEventScope(scope, i, ctick)
+	if i == 0 then
+		return scope
+	end
+	local topV = scope[i]
+	-- if the event is older than 1 second, remove it
+	if ctick - topV > interval then
+		popScope(scope)
+		return iterateEventScope(scope, i - 1, ctick)
+	end
+	-- if the event is newer than 1 second, keep it and iterate over the previous values in scope
+	-- make a copy of the scope and remove the top value
+	local tempScope = Utility.DeepCopy(scope)
+	popScope(tempScope)
+	-- iterate over the previous values in scope
+	local newScope = iterateEventScope(tempScope, i - 1, ctick)
+	-- push the top value back into the new scope
+	pushScope(newScope, topV)
+	return newScope
+end
+
+local function outgoingEvent(eventName: string): boolean
+	local S = secureGetScope(eventName)
+	local size = S.n
+	local ctick = decimalConverter(tick())
+
+	local NS = iterateEventScope(S, size, ctick)
+	setScope(eventName, NS)
+
+	local nSize = NS.n
+
+	if nSize < maxSameEventPerSecond then
+		pushScope(NS, ctick)
+	else
+		return false
+	end
+	return true
+end
+--
 
 --[=[
 	@within Probe
@@ -126,7 +213,7 @@ function Probe._client(self: ProbeInternal)
 		end
 
 		if not self.Bindings[event_name] then
-			warn("{" .. script.Name .. "}: " .. event_name .. " has no listeners on client")
+			warn("{Probe}: " .. event_name .. " has no listeners on client")
 		end
 	end)
 	self._Probes.ure.OnClientEvent:Connect(function(event_name: string, args: { any })
@@ -152,7 +239,7 @@ function Probe._client(self: ProbeInternal)
 		end
 
 		if not self.Bindings[event_name] then
-			warn("{" .. script.Name .. "}: " .. event_name .. " has no listeners on client")
+			warn("{Probe}: " .. event_name .. " has no listeners on client")
 		end
 	end)
 	self._Probes.func.OnClientInvoke = function(event_name: string, ...: any)
@@ -188,15 +275,16 @@ function Probe._server(self: ProbeInternal)
 				end)
 			end
 		else
-			warn("{" .. script.Name .. "}: " .. event_name .. " has no listeners on server")
+			warn("{Probe}: " .. event_name .. " has no listeners on server")
 		end
 	end)
 	self._Probes.func.OnServerInvoke = function(player: Player, event_name: string, args: { any })
-		local callback = self.Bindings["_" .. event_name]
+		local eName = "_" .. event_name
+		local callback = self.Bindings[eName]
 		if callback ~= nil then
 			return callback(player, table.unpack(args))
 		else
-			error("No listeners has been found for [" .. event_name .. "]")
+			error("No listeners has been found for [" .. eName .. "]")
 		end
 	end
 end
@@ -284,6 +372,10 @@ end
 	@return nil
 ]=]
 function Probe.Fire(self: ProbeInternal, event_name: string, player_or_arg1: Player | any, ...: any)
+	if outgoingEvent(event_name) == false then
+		warn("{Probe}: " .. event_name .. " has reached the maximum amount of events per second")
+		return
+	end
 	if IsServer == true then
 		if self.settings.Type == "URE" then
 			self._Probes.ure:FireClient(player_or_arg1, event_name, table.pack(...))
