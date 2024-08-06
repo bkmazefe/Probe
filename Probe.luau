@@ -10,13 +10,15 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local Utility = require(script.Parent.Utility)
+local DeepCopy = require(script.Parent.DeepCopy)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local IsServer = RunService:IsServer()
 
+type scope = { [number]: number?, n: number }
+
 -- Probe event caching
 --
-local latestEvents: { [string]: {} } = {}
+local latestEvents: { [string]: { [number]: number?, n: number } } = {}
 -- scopes are used to limit the amount of events that can be fired per second
 
 local function decimalConverter(n: number): number
@@ -25,31 +27,31 @@ local function decimalConverter(n: number): number
 	return nN or 0
 end
 
-local function createScope(eventName: string)
+local function createScope(eventName: string): scope
 	local t = table.pack()
 	latestEvents[eventName] = t
 	return t
 end
 
-local function getScope(eventName: string): { [any]: any }?
+local function getScope(eventName: string): scope?
 	return latestEvents[eventName]
 end
 
-local function setScope(eventName: string, scope: { [any]: any })
+local function setScope(eventName: string, scope: scope)
 	latestEvents[eventName] = scope
 end
 
-local function secureGetScope(eventName: string): { [any]: any }
+local function secureGetScope(eventName: string): scope
 	return getScope(eventName) or createScope(eventName)
 end
 
-local function pushScope(scope, v)
+local function pushScope(scope: scope, v: number)
 	scope.n += 1
 	local size = scope.n
 	scope[size] = v
 end
 
-local function popScope(scope)
+local function popScope(scope: scope)
 	local size = scope.n
 	scope[size] = nil
 	scope.n -= 1
@@ -59,11 +61,11 @@ end
 local maxSameEventPerSecond = 10
 local interval = 1
 
-local function iterateEventScope(scope, i, ctick)
+local function iterateEventScope(scope: scope, i: number, ctick: number)
 	if i == 0 then
 		return scope
 	end
-	local topV = scope[i]
+	local topV = scope[i] or 0
 	-- if the event is older than 1 second, remove it
 	if ctick - topV > interval then
 		popScope(scope)
@@ -71,7 +73,7 @@ local function iterateEventScope(scope, i, ctick)
 	end
 	-- if the event is newer than 1 second, keep it and iterate over the previous values in scope
 	-- make a copy of the scope and remove the top value
-	local tempScope = Utility.DeepCopy(scope)
+	local tempScope = DeepCopy(scope)
 	popScope(tempScope)
 	-- iterate over the previous values in scope
 	local newScope = iterateEventScope(tempScope, i - 1, ctick)
