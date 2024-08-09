@@ -10,15 +10,13 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local DeepCopy = require(script.Parent.DeepCopy)
+local Utility = require(script.Parent.Utility)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local IsServer = RunService:IsServer()
 
-type scope = { [number]: number?, n: number }
-
 -- Probe event caching
 --
-local latestEvents: { [string]: { [number]: number?, n: number } } = {}
+local latestEvents: { [string]: {} } = {}
 -- scopes are used to limit the amount of events that can be fired per second
 
 local function decimalConverter(n: number): number
@@ -27,31 +25,31 @@ local function decimalConverter(n: number): number
 	return nN or 0
 end
 
-local function createScope(eventName: string): scope
+local function createScope(eventName: string)
 	local t = table.pack()
 	latestEvents[eventName] = t
 	return t
 end
 
-local function getScope(eventName: string): scope?
+local function getScope(eventName: string): { [any]: any }?
 	return latestEvents[eventName]
 end
 
-local function setScope(eventName: string, scope: scope)
+local function setScope(eventName: string, scope: { [any]: any })
 	latestEvents[eventName] = scope
 end
 
-local function secureGetScope(eventName: string): scope
+local function secureGetScope(eventName: string): { [any]: any }
 	return getScope(eventName) or createScope(eventName)
 end
 
-local function pushScope(scope: scope, v: number)
+local function pushScope(scope, v)
 	scope.n += 1
 	local size = scope.n
 	scope[size] = v
 end
 
-local function popScope(scope: scope)
+local function popScope(scope)
 	local size = scope.n
 	scope[size] = nil
 	scope.n -= 1
@@ -61,11 +59,11 @@ end
 local maxSameEventPerSecond = 10
 local interval = 1
 
-local function iterateEventScope(scope: scope, i: number, ctick: number)
+local function iterateEventScope(scope, i, ctick)
 	if i == 0 then
 		return scope
 	end
-	local topV = scope[i] or 0
+	local topV = scope[i]
 	-- if the event is older than 1 second, remove it
 	if ctick - topV > interval then
 		popScope(scope)
@@ -73,7 +71,7 @@ local function iterateEventScope(scope: scope, i: number, ctick: number)
 	end
 	-- if the event is newer than 1 second, keep it and iterate over the previous values in scope
 	-- make a copy of the scope and remove the top value
-	local tempScope = DeepCopy(scope)
+	local tempScope = Utility.DeepCopy(scope)
 	popScope(tempScope)
 	-- iterate over the previous values in scope
 	local newScope = iterateEventScope(tempScope, i - 1, ctick)
@@ -374,10 +372,6 @@ end
 	@return nil
 ]=]
 function Probe.Fire(self: ProbeInternal, event_name: string, player_or_arg1: Player | any, ...: any)
-	if outgoingEvent(event_name) == false then
-		warn("{Probe}: " .. event_name .. " has reached the maximum amount of events per second")
-		return
-	end
 	if IsServer == true then
 		if self.settings.Type == "URE" then
 			self._Probes.ure:FireClient(player_or_arg1, event_name, table.pack(...))
@@ -385,6 +379,10 @@ function Probe.Fire(self: ProbeInternal, event_name: string, player_or_arg1: Pla
 			self._Probes.event:FireClient(player_or_arg1, event_name, table.pack(...))
 		end
 	else
+		if outgoingEvent(event_name) == false then
+			warn("{Probe}: " .. event_name .. " has reached the maximum amount of events per second")
+			return
+		end
 		if self.settings.Type == "URE" then
 			self._Probes.ure:FireServer(event_name, table.pack(variadic(player_or_arg1, ...)))
 		else
